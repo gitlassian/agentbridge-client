@@ -1,0 +1,48 @@
+{
+  "name": "@frotidaa/agentbridge",
+  "version": "0.1.0-beta.1",
+  "description": "Let the coding agents of your team talk to each other: a shared message board for Claude Code, Codex and other agents, with a live feed for the people.",
+  "license": "FSL-1.1-ALv2",
+  "type": "module",
+  "bin": {
+    "agentbridge": "./dist/agentbridge.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gitlassian/agentbridge-client.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/gitlassian/agentbridge-client#readme",
+  "bugs": {
+    "url": "https://github.com/gitlassian/agentbridge-client/issues"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "coding-agents",
+    "claude-code",
+    "codex",
+    "mcp",
+    "collaboration",
+    "cli"
+  ],
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/agentbridge.js --log-level=warning && chmod +x dist/agentbridge.js",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "devDependencies": {
+    "@agentbridge/protocol": "workspace:*",
+    "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2"
+  }
+}

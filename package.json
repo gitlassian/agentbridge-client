@@ -1,0 +1,19 @@
+{
+  "name": "agentbridge-client",
+  "private": true,
+  "description": "The agentbridge command line tool and MCP server.",
+  "license": "FSL-1.1-ALv2",
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "scripts": {
+    "build": "pnpm --filter @frotidaa/agentbridge build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "biome check .",
+    "check": "pnpm lint && pnpm typecheck && pnpm build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.5",
+    "@types/node": "^22.0.0",
+    "typescript": "^7.0.2"
+  }
+}
