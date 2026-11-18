@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ApiClient, ApiError } from "../client.ts";
 import { type Context, resolveContext } from "../config.ts";
 import type { Io } from "../io.ts";
 import { type Harness, talkFor } from "./harness.ts";
-import { cacheDir, readInput } from "./hook.ts";
+import { cacheDir, QUIET, readInput } from "./hook.ts";
+import { hookFolder } from "./session.ts";
 import { renderMessages } from "./wrap.ts";
 
 /** Exit code that makes Claude Code wake the agent with what the hook printed (`asyncRewake`). */
@@ -27,6 +28,16 @@ function seconds(env: NodeJS.ProcessEnv, name: string, fallback: number): number
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+/** What a listener writes into its lock file, so `agentbridge me` can show it. */
+export interface Listener {
+  id: string;
+  pid: number;
+  session: string;
+  board_id: string | null;
+  handle: string;
+  since: string;
+}
+
 /**
  * One listener per Claude Code session. A newer listener takes over by writing its own id into
  * the lock file; the older one notices on its next round and ends quietly. Nothing is killed, so
@@ -40,14 +51,20 @@ class SessionLock {
     this.path = join(dir, `wake-${sessionId.replace(/[^A-Za-z0-9._-]+/g, "_")}.lock`);
   }
 
-  async take(): Promise<void> {
+  async take(info: Omit<Listener, "id" | "pid" | "since">): Promise<void> {
     await mkdir(join(this.path, ".."), { recursive: true });
-    await writeFile(this.path, this.id);
+    const listener: Listener = {
+      id: this.id,
+      pid: process.pid,
+      since: new Date().toISOString(),
+      ...info,
+    };
+    await writeFile(this.path, JSON.stringify(listener));
   }
 
   async held(): Promise<boolean> {
     try {
-      return (await readFile(this.path, "utf8")) === this.id;
+      return (JSON.parse(await readFile(this.path, "utf8")) as Listener).id === this.id;
     } catch {
       return false;
     }
@@ -58,9 +75,68 @@ class SessionLock {
   }
 }
 
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
+/** The wake listeners running on this machine (lock files of processes that are still alive). */
+export async function wakeListeners(env: NodeJS.ProcessEnv): Promise<Listener[]> {
+  const dir = cacheDir(env);
+  const names = await readdir(dir).catch(() => [] as string[]);
+  const found: Listener[] = [];
+  for (const name of names) {
+    if (!name.startsWith("wake-") || !name.endsWith(".lock")) continue;
+    try {
+      const listener = JSON.parse(await readFile(join(dir, name), "utf8")) as Listener;
+      if (typeof listener.pid === "number" && alive(listener.pid)) found.push(listener);
+    } catch {
+      // an old lock format or a half-written file
+    }
+  }
+  return found.sort((a, b) => a.since.localeCompare(b.since));
+}
+
+/** The wake log keeps the last of these many bytes; enough for a few days of listeners. */
+const LOG_LIMIT = 200_000;
+
+/**
+ * Appends one line to `wake.log` in the cache folder: when a listener started, woke the agent or
+ * ended, and why. A wake that did not happen can then be explained. Never throws.
+ */
+export async function wakeLog(env: NodeJS.ProcessEnv, line: string): Promise<void> {
+  const path = join(cacheDir(env), "wake.log");
+  try {
+    await mkdir(cacheDir(env), { recursive: true });
+    await appendFile(path, `${new Date().toISOString()} ${line}\n`);
+    const size = (await stat(path)).size;
+    if (size > LOG_LIMIT) {
+      const text = await readFile(path, "utf8");
+      const keep = text.slice(text.length - LOG_LIMIT / 2);
+      await writeFile(path, keep.slice(keep.indexOf("\n") + 1));
+    }
+  } catch {
+    // logging is best effort
+  }
+}
+
+/**
+ * Claude Code wakes an idle session only for a background hook that exits with code 2, and shows
+ * what it printed under a "hook blocking error" label that cannot be changed. The text therefore
+ * starts by saying what it really is.
+ */
+export const WAKE_FRAME =
+  "Not an error: Claude Code labels board messages that wake an idle session as a hook error. " +
+  "These are new messages from your teammates on the agentbridge board, sent while you were idle.";
+
 const idleNote = (harness: Harness) =>
-  "New messages arrived on the agentbridge board while you were idle. Read them and answer or " +
-  `act on them ${talkFor(harness).answer}. If nothing needs doing, stop without replying.`;
+  "Read them and answer or " +
+  `act on them ${talkFor(harness).answer}. If one needs a person's decision, ${talkFor(harness).askUser}. ` +
+  `If nothing needs doing, stop without replying. ${QUIET}`;
 
 /** How long `codex queue` may take to hand the message over. */
 const QUEUE_TIMEOUT_MS = 30_000;
@@ -100,9 +176,11 @@ export function queueInCodex(
  */
 export async function runWake(io: Io, harness: Harness = "claude"): Promise<number> {
   let lock: SessionLock | null = null;
+  let who = "";
+  let ended = "time is up";
   try {
     const input = await readInput(io);
-    const cwd = typeof input.cwd === "string" ? input.cwd : io.cwd;
+    const cwd = await hookFolder(io.env, input, io.cwd);
     const sessionId = typeof input.session_id === "string" ? input.session_id : undefined;
 
     let identity: Context;
@@ -112,8 +190,11 @@ export async function runWake(io: Io, harness: Harness = "claude"): Promise<numb
       return 0; // this directory is not connected to a board
     }
 
-    lock = new SessionLock(cacheDir(io.env), sessionId ?? "default");
-    await lock.take();
+    const session = sessionId ?? "default";
+    who = `session ${session} as ${identity.handle} on board "${identity.boardName ?? "?"}"`;
+    lock = new SessionLock(cacheDir(io.env), session);
+    await lock.take({ session, board_id: identity.boardId ?? null, handle: identity.handle });
+    await wakeLog(io.env, `start  ${who} (${cwd})`);
 
     const listenMs = seconds(io.env, "AGENTBRIDGE_WAKE_SECONDS", DEFAULT_LISTEN_SECONDS) * 1000;
     const poll = Math.round(seconds(io.env, "AGENTBRIDGE_WAKE_POLL_SECONDS", DEFAULT_POLL_SECONDS));
@@ -122,14 +203,24 @@ export async function runWake(io: Io, harness: Harness = "claude"): Promise<numb
     const board = identity.boardName ?? "(from environment)";
 
     while (Date.now() < deadline) {
-      if (!(await lock.held())) return 0; // a newer listener took over
+      if (!(await lock.held())) {
+        ended = "a newer listener of the session took over";
+        return 0;
+      }
       const left = Math.max(1, Math.min(poll, Math.ceil((deadline - Date.now()) / 1000)));
       let result: Awaited<ReturnType<ApiClient["wait"]>>;
       try {
         result = await client.wait(left, WAKE_LIMIT);
       } catch (error) {
-        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return 0;
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          ended = "the server rejected the key";
+          return 0;
+        }
         if (io.env.AGENTBRIDGE_DEBUG) io.err(`agentbridge hook wake: ${String(error)}\n`);
+        if (!ended.includes("unreachable")) {
+          await wakeLog(io.env, `retry  ${who}: server unreachable (${String(error)})`);
+        }
+        ended = "time is up; the server was unreachable at times";
         await sleep(Math.min(RETRY_MS, Math.max(0, deadline - Date.now())));
         continue;
       }
@@ -137,20 +228,30 @@ export async function runWake(io: Io, harness: Harness = "claude"): Promise<numb
 
       const talk = talkFor(harness);
       const rendered = renderMessages(board, result.messages, result.remaining, undefined, talk);
-      const text = `${rendered.text}\n\n${idleNote(harness)}`;
+      const text =
+        harness === "claude"
+          ? `${WAKE_FRAME}\n\n${rendered.text}\n\n${idleNote(harness)}`
+          : `New messages arrived on the agentbridge board while you were idle.\n\n${rendered.text}\n\n${idleNote(harness)}`;
+      const numbers = result.messages.map((m) => `#${m.seq}`).join(", ");
+      ended = `woke the agent with ${numbers}`;
       if (harness === "claude") {
         io.err(`${text}\n`);
         return WAKE_EXIT;
       }
       if (sessionId === undefined || !(await queueInCodex(io.env, sessionId, text))) {
+        ended += " (codex queue failed; printed for the next turn)";
         io.out(`${text}\n`);
       }
       return 0;
     }
   } catch (error) {
     if (io.env.AGENTBRIDGE_DEBUG) io.err(`agentbridge hook wake: ${String(error)}\n`);
+    ended = `failed: ${String(error)}`;
   } finally {
-    await lock?.release().catch(() => undefined);
+    if (lock) {
+      await wakeLog(io.env, `end    ${who}: ${ended}`);
+      await lock.release().catch(() => undefined);
+    }
   }
   return 0;
 }

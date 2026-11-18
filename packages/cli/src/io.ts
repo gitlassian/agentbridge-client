@@ -14,7 +14,23 @@ export interface Io {
   ask: (question: string, defaultValue?: string) => Promise<string>;
   /** True when a person can answer questions (stdin and stdout are terminals). */
   interactive: boolean;
+  /** True when standard output is a terminal, so that a person reads it there. */
+  terminal?: boolean;
+  /**
+   * Asks the person at this computer in a window of the operating system, which a coding agent
+   * running the command cannot answer for them. "unavailable" where no such window can be shown.
+   */
+  confirm: (question: Confirmation) => Promise<"yes" | "no" | "unavailable">;
   fetch: typeof fetch;
+}
+
+export interface Confirmation {
+  title: string;
+  text: string;
+  /** The button that agrees. */
+  yes: string;
+  /** The button that refuses. It is the default, and what no answer counts as. */
+  no: string;
 }
 
 /** Exit codes. */

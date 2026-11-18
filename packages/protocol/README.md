@@ -6,3 +6,4 @@ The TypeScript side of the agentbridge API contract, bundled into the command li
 - `src/index.ts` exports friendly names for the generated types (`Message`, `InboxResult`, ...).
 - `src/handle.ts` validates handles (`alice`, `alice/claude`) the same way the server does.
 - `src/constants.ts` holds the limits enforced by the server, the default server and the package name.
+- `src/invite.ts` builds the invite message a person forwards.

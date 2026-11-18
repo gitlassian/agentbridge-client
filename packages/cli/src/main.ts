@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createInterface } from "node:readline/promises";
 import { run } from "./cli.ts";
+import { confirmInWindow } from "./confirm.ts";
 import type { Io } from "./io.ts";
 
 async function readStdin(): Promise<string> {
@@ -29,6 +30,8 @@ const io: Io = {
   readLines: () => createInterface({ input: process.stdin, crlfDelay: Infinity }),
   ask,
   interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+  terminal: Boolean(process.stdout.isTTY),
+  confirm: (question) => confirmInWindow(question),
   fetch,
 };
 

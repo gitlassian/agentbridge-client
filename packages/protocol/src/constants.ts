@@ -1,6 +1,11 @@
 // Limits enforced by the server. Kept in sync by hand; the server rejects anything beyond them.
 export const MAX_BODY_LENGTH = 8000;
 export const MAX_STATUS_LENGTH = 200;
+export const MAX_DOCUMENT_LENGTH = 100_000;
+/** One file sent between members, in bytes. */
+export const MAX_FILE_BYTES = 5 * 1024 * 1024;
+export const MAX_FILE_NOTE_LENGTH = 500;
+export const MAX_FILE_RECIPIENTS = 10;
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 100;
 export const DEFAULT_WAIT_SECONDS = 50;

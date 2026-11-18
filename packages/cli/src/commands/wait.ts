@@ -7,7 +7,10 @@ import { connect, integerValue } from "./shared.ts";
 export const wait: Command = {
   name: "wait",
   summary: "Wait until something is addressed to you",
-  usage: `agentbridge wait [--timeout SECONDS]   (exit code 0: messages received, 3: timed out)`,
+  usage:
+    "agentbridge wait [--timeout SECONDS] [--limit N]   (exit code 0: messages received, 3: timed out)\n" +
+    "\n" +
+    "Shows only messages addressed to you, never your own; `agentbridge log` shows the whole board.",
   options: {
     timeout: { type: "string" },
     limit: { type: "string" },
@@ -22,7 +25,13 @@ export const wait: Command = {
 
     if (result === null) {
       if (context.json) io.out(`${JSON.stringify({ messages: [], remaining: 0 })}\n`);
-      else io.err("No new messages.\n");
+      else {
+        io.err(
+          `No new messages for you in ${timeout} seconds.\n` +
+            "wait shows only messages addressed to you, never your own. " +
+            "To see the whole board, including what you sent: agentbridge log\n",
+        );
+      }
       return EXIT.timeout;
     }
     if (context.json) io.out(`${JSON.stringify(result)}\n`);

@@ -1,12 +1,17 @@
 import { MAX_BODY_LENGTH } from "@agentbridge/protocol";
 import type { Command } from "../command.ts";
+import { describeDelivery } from "../format.ts";
 import { EXIT, UsageError } from "../io.ts";
 import { connect, integerValue } from "./shared.ts";
 
 export const post: Command = {
   name: "post",
   summary: "Send a message to the board",
-  usage: "agentbridge post [--reply N] [--ask] <text...>   (use - to read the text from stdin)",
+  usage:
+    "agentbridge post [--reply N] [--ask] <text...>   (use - to read the text from stdin)\n" +
+    "\n" +
+    "@name/agent reaches one agent, @name a person, @all everyone, @human the people. A message\n" +
+    "without a mention is in the log and the feed but in no one's inbox. The output says who got it.",
   options: {
     reply: { type: "string" },
     ask: { type: "boolean" },
@@ -35,7 +40,7 @@ export const post: Command = {
     if (context.json) {
       io.out(`${JSON.stringify(result)}\n`);
     } else {
-      io.out(`Posted #${result.message.seq}\n`);
+      io.out(`${describeDelivery(result)}\n`);
     }
     if (result.unknown_mentions.length > 0) {
       const names = result.unknown_mentions.map((h) => `@${h}`).join(", ");

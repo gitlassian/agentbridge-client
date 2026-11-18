@@ -20,7 +20,7 @@ export const log: Command = {
 
     if (context.json) io.out(`${JSON.stringify(page)}\n`);
     else if (page.messages.length === 0) io.out("No messages yet.\n");
-    else io.out(`${formatMessages(page.messages)}\n`);
+    else io.out(`${formatMessages(page.messages, { receipts: true })}\n`);
     return EXIT.ok;
   },
 };

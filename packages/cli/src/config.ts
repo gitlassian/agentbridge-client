@@ -1,8 +1,8 @@
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, parse } from "node:path";
+import { dirname, join, parse, resolve } from "node:path";
 import { chooseAgent, detectAgent, toolFromName } from "./agents.ts";
-import { ApiClient, ApiError } from "./client.ts";
+import { ApiClient, ApiError, normalizeServer } from "./client.ts";
 import { CliError } from "./io.ts";
 
 /** `.agentbridge.json` in the repository: which board this repository belongs to. No secrets. */
@@ -64,13 +64,65 @@ export const REPO_CONFIG_NAME = ".agentbridge.json";
 /** Where the user's secrets live: ~/.config/agentbridge (or $XDG_CONFIG_HOME/agentbridge). */
 export function configDir(env: NodeJS.ProcessEnv): string {
   if (env.AGENTBRIDGE_CONFIG_DIR) return env.AGENTBRIDGE_CONFIG_DIR;
+  return defaultConfigDir(env);
+}
+
+/** The config folder used when AGENTBRIDGE_CONFIG_DIR is not set. */
+export function defaultConfigDir(env: NodeJS.ProcessEnv): string {
   if (env.XDG_CONFIG_HOME) return join(env.XDG_CONFIG_HOME, "agentbridge");
-  return join(homedir(), ".config", "agentbridge");
+  return join(env.HOME || homedir(), ".config", "agentbridge");
+}
+
+/**
+ * Projects joined with a config folder of their own (AGENTBRIDGE_CONFIG_DIR), so that commands
+ * and hooks started without the variable still act as that person. Several people can share one
+ * machine this way. It lives in the default config folder, outside every repository, because
+ * `.agentbridge.json` is committed and shared by the whole team.
+ */
+interface FoldersFile {
+  folders: Record<string, string>;
+}
+
+const foldersPath = (env: NodeJS.ProcessEnv) => join(defaultConfigDir(env), "folders.json");
+
+/** A directory in the form used as a key: absolute, with symbolic links resolved. */
+async function folderKey(dir: string): Promise<string> {
+  return realpath(dir).catch(() => resolve(dir));
+}
+
+/**
+ * The environment to use for the project in `dir`: the person's own config folder when the
+ * project was joined with one and AGENTBRIDGE_CONFIG_DIR is not set. An explicit variable wins.
+ */
+export async function envForFolder(
+  env: NodeJS.ProcessEnv,
+  dir: string,
+): Promise<NodeJS.ProcessEnv> {
+  if (env.AGENTBRIDGE_CONFIG_DIR) return env;
+  const file = await readJson<FoldersFile>(foldersPath(env));
+  const remembered = file?.folders?.[await folderKey(dir)];
+  return remembered ? { ...env, AGENTBRIDGE_CONFIG_DIR: remembered } : env;
+}
+
+/**
+ * Remembers which config folder the project in `dir` uses (after `init`), or forgets it when that
+ * is the default folder. Writes only when something changes.
+ */
+export async function rememberFolder(env: NodeJS.ProcessEnv, dir: string): Promise<void> {
+  const key = await folderKey(dir);
+  const file = (await readJson<FoldersFile>(foldersPath(env))) ?? { folders: {} };
+  file.folders ??= {};
+  const own = env.AGENTBRIDGE_CONFIG_DIR ? resolve(env.AGENTBRIDGE_CONFIG_DIR) : undefined;
+  const wanted = own !== undefined && own !== resolve(defaultConfigDir(env)) ? own : undefined;
+  if (file.folders[key] === wanted) return;
+  if (wanted === undefined) delete file.folders[key];
+  else file.folders[key] = wanted;
+  await writePrivate(foldersPath(env), `${JSON.stringify(file, null, 2)}\n`);
 }
 
 const credentialsPath = (env: NodeJS.ProcessEnv) => join(configDir(env), "credentials.json");
 
-async function readJson<T>(path: string): Promise<T | null> {
+export async function readJson<T>(path: string): Promise<T | null> {
   let text: string;
   try {
     text = await readFile(path, "utf8");
@@ -88,7 +140,7 @@ async function readJson<T>(path: string): Promise<T | null> {
 }
 
 /** Writes a file readable only by the owner, replacing it atomically. */
-async function writePrivate(path: string, content: string): Promise<void> {
+export async function writePrivate(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temp = `${path}.${process.pid}.tmp`;
   await writeFile(temp, content, { mode: 0o600 });
@@ -113,6 +165,14 @@ export async function saveBoardCredentials(
   const file = await readCredentials(env);
   file.boards[boardId] = credentials;
   await writePrivate(credentialsPath(env), `${JSON.stringify(file, null, 2)}\n`);
+}
+
+/** Forgets a board's keys on this machine: its person left the board or was taken off it. */
+export async function forgetBoard(env: NodeJS.ProcessEnv, boardId: string): Promise<void> {
+  const file = await readCredentials(env);
+  if (!(boardId in file.boards)) return;
+  const boards = Object.fromEntries(Object.entries(file.boards).filter(([id]) => id !== boardId));
+  await writePrivate(credentialsPath(env), `${JSON.stringify({ boards }, null, 2)}\n`);
 }
 
 /**
@@ -197,6 +257,8 @@ export interface Context {
   boardId: string | undefined;
   boardName: string | undefined;
   role: Role;
+  /** The config folder the keys came from (not set when they came from the environment). */
+  configDir?: string;
   /** Set when this call registered the agent it acts as (a new agent of the person). */
   registered?: boolean;
 }
@@ -225,7 +287,7 @@ export async function resolveContext(
 ): Promise<Context> {
   if (env.AGENTBRIDGE_SERVER && env.AGENTBRIDGE_API_KEY) {
     return {
-      server: env.AGENTBRIDGE_SERVER.replace(/\/+$/, ""),
+      server: normalizeServer(env.AGENTBRIDGE_SERVER, "AGENTBRIDGE_SERVER"),
       apiKey: env.AGENTBRIDGE_API_KEY,
       handle: "(from environment)",
       boardId: undefined,
@@ -241,7 +303,8 @@ export async function resolveContext(
     });
   }
 
-  const credentials = (await readCredentials(env)).boards[repo.config.board_id];
+  const folderEnv = await envForFolder(env, repo.dir);
+  const credentials = (await readCredentials(folderEnv)).boards[repo.config.board_id];
   if (!credentials) {
     throw new CliError(`No credentials for board "${repo.config.board_name}" on this machine.`, {
       hint: `Join it with \`agentbridge init --join <invite link> --force\`.`,
@@ -258,7 +321,7 @@ export async function resolveContext(
       identity = credentials.agents[choice.name] as AgentIdentity;
     } else if (choice.kind === "register") {
       identity = await registerAgent(
-        env,
+        folderEnv,
         repo.config.board_id,
         credentials,
         choice.name,
@@ -284,6 +347,7 @@ export async function resolveContext(
     boardId: repo.config.board_id,
     boardName: repo.config.board_name,
     role,
+    configDir: configDir(folderEnv),
     ...(registered ? { registered } : {}),
   };
 }

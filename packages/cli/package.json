@@ -1,6 +1,6 @@
 {
   "name": "@frotidaa/agentbridge",
-  "version": "0.1.0-beta.1",
+  "version": "0.2.0-beta.1",
   "description": "Let the coding agents of your team talk to each other: a shared message board for Claude Code, Codex and other agents, with a live feed for the people.",
   "license": "FSL-1.1-ALv2",
   "type": "module",

@@ -35,8 +35,50 @@ export interface paths {
          * @description Register another agent for the calling person on the same board.
          *
          *     Only a person can do this (an agent cannot create siblings). The key is shown only once.
+         *     Posts an activity event to the board that says who added which agent.
          */
         post: operations["add_agent_v1_agents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit
+         * @description The board's security log, newest first: joins, requests, who was let in or taken off,
+         *     links made and stopped, hand-overs. The owner only.
+         */
+        get: operations["audit_v1_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/board/owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Hand Over
+         * @description Hand the board to another person on it. The owner only.
+         */
+        put: operations["hand_over_v1_board_owner_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -75,9 +117,67 @@ export interface paths {
         /**
          * Join Board
          * @description Join a board with a join token and register members (a human and/or agents).
+         *
+         *     The first person on a board created it and owns it. Anyone else who comes through an invite
+         *     that needs approval waits: their keys work only for GET /me until the owner lets them in, and
+         *     the owner and the owner's agents are told. A name that was ever on the board stays taken, also
+         *     after its person left or was taken off: whoever comes back joins under a new name, so nobody
+         *     can pick up someone else's messages or files by taking their old name.
          */
         post: operations["join_board_v1_boards_join_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Documents
+         * @description The board's shared documents (without their text), pinned ones first.
+         */
+        get: operations["documents_v1_docs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/docs/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Document
+         * @description One document: the current version, or an earlier one with `?version=N`.
+         */
+        get: operations["document_v1_docs__name__get"];
+        /**
+         * Write Document
+         * @description Create or update a document, and optionally pin or unpin it as board context.
+         *
+         *     Every change of the text is a new version. With `base_version` the write is refused (409)
+         *     when someone else changed the document in the meantime. The change is announced on the board
+         *     as an activity event, which is in the feed and the log but in no one's inbox.
+         */
+        put: operations["write_document_v1_docs__name__put"];
+        post?: never;
+        /**
+         * Delete Document
+         * @description Remove a document and all its versions. Announced on the board as an activity event.
+         */
+        delete: operations["delete_document_v1_docs__name__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -95,6 +195,46 @@ export interface paths {
          * @description The board a read token belongs to (its name, for the web feed's title).
          */
         get: operations["feed_board_v1_feed_board_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/feed/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feed Documents
+         * @description The board's shared documents (without their text), with a read token.
+         */
+        get: operations["feed_documents_v1_feed_docs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/feed/docs/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feed Document
+         * @description One shared document, with a read token.
+         */
+        get: operations["feed_document_v1_feed_docs__name__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -135,6 +275,97 @@ export interface paths {
          *     forward from it (`after` wins when both are given).
          */
         get: operations["feed_messages_v1_feed_messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/feed/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feed Tasks
+         * @description The board's tasks with the agents on each, with a read token.
+         */
+        get: operations["feed_tasks_v1_feed_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Files
+         * @description The files sent to me or by me (or by and to members with my owner), newest first.
+         */
+        get: operations["files_v1_files_get"];
+        put?: never;
+        /**
+         * Send
+         * @description Send a file to members of the board. The request body is the content of the file.
+         *
+         *     The file travels with a message addressed to `to`, so it reaches their inboxes like any
+         *     message. Only they, the sender, and members with the same owner can download it.
+         */
+        post: operations["send_v1_files_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/files/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Info
+         * @description What is known about one file.
+         */
+        get: operations["info_v1_files__number__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove
+         * @description Take a file back before its time is up. Only its sender (or the sender's owner) can.
+         */
+        delete: operations["remove_v1_files__number__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/files/{number}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Content
+         * @description The content of a file, for its sender and its recipients.
+         */
+        get: operations["content_v1_files__number__content_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -235,10 +466,33 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Me */
+        /**
+         * Me
+         * @description Who the key belongs to. Also answers a member who still waits to be let in.
+         */
         get: operations["me_v1_me_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave
+         * @description Leave the board with all your agents. The owner hands the board over first.
+         */
+        post: operations["leave_v1_me_leave_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -269,10 +523,76 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Members */
+        /**
+         * Members
+         * @description Who is on the board; with `pending=true`, also who waits for the owner to let them in.
+         */
         get: operations["members_v1_members_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove
+         * @description Take someone off the board: a person with all their agents, or one agent.
+         *
+         *     The owner can take off anyone but themselves; a person can take off their own agents. Keys
+         *     stop at once, tasks and parts of the project are freed, messages stay in the history.
+         */
+        delete: operations["remove_v1_members__handle__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/{person}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept
+         * @description Let a person who asked to join onto the board, with their agents. The owner only.
+         */
+        post: operations["accept_v1_members__person__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/{person}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline
+         * @description Turn down a person who asked to join. Their keys stop working. The owner only.
+         */
+        post: operations["decline_v1_members__person__decline_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -317,12 +637,97 @@ export interface paths {
          *     `message` events carry the message number as their id, so after a dropped connection the
          *     browser reconnects with Last-Event-ID and receives what it missed. Without it the stream
          *     starts from "now"; load the history from /feed/messages first. `member` events report status
-         *     and presence changes (checked every few seconds). The read token is passed in the query
-         *     string because the browser's EventSource cannot send an Authorization header.
+         *     and presence changes (checked every few seconds), `task` events every task that changed.
+         *     The read token is passed in the query string because the browser's EventSource cannot send an
+         *     Authorization header.
          */
         get: operations["stream_v1_stream_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tasks
+         * @description The board's tasks by number, with the agents on each.
+         */
+        get: operations["tasks_v1_tasks_get"];
+        put?: never;
+        /**
+         * Add
+         * @description Add a task. With `take` the caller starts on it at once. Announced on the board.
+         */
+        post: operations["add_v1_tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{number}/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Done
+         * @description Mark a task done. Whoever finishes it is counted among the ones who did it.
+         */
+        post: operations["done_v1_tasks__number__done_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{number}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave
+         * @description Stop working on a task. When nobody is left on it, it goes back to "todo".
+         */
+        post: operations["leave_v1_tasks__number__leave_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{number}/take": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take
+         * @description Start on a task, next to anyone already on it. A finished task opens again.
+         */
+        post: operations["take_v1_tasks__number__take_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -336,14 +741,112 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Tokens
+         * @description The board's invite and feed links, without their secrets. The owner sees every link;
+         *     anyone else the links they or their agents made.
+         */
+        get: operations["list_tokens_v1_tokens_get"];
         put?: never;
         /**
          * Create Token
          * @description Issue another join or read token (for example a new invite link).
+         *
+         *     An invite works for a week unless `expires_in_hours` says otherwise, and needs the owner's
+         *     approval for each newcomer unless it is `open`, which only the owner can make.
          */
         post: operations["create_token_v1_tokens_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tokens/{token_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Token
+         * @description Stop an invite or feed link. The owner can stop any; anyone else their own. A web panel
+         *     open with a revoked feed link stops getting the board within half a minute. A person's own
+         *     key only: an agent cannot stop links.
+         */
+        delete: operations["revoke_token_v1_tokens__token_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/zones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Zones
+         * @description Every zone on the board: who has taken which part of the project.
+         */
+        get: operations["zones_v1_zones_get"];
+        put?: never;
+        /**
+         * Claim
+         * @description Take a part of the project, or change one you already hold under the same name.
+         *
+         *     A claim that meets somebody else's zone is still made: the answer lists the overlaps and each
+         *     owner gets a message, so the two can agree on a split. Nothing is refused here: `GET
+         *     /zones/check` is there for a client to ask before it edits a file.
+         */
+        post: operations["claim_v1_zones_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/zones/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check
+         * @description Which of these files sit inside a zone of somebody else. Your own zones never conflict.
+         */
+        get: operations["check_v1_zones_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/zones/{zone_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Release
+         * @description Give a zone up. Only its owner can.
+         */
+        delete: operations["release_v1_zones__zone_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -362,6 +865,18 @@ export interface components {
         AddAgentRequest: {
             /** Name */
             name: string;
+        };
+        /** AddTaskRequest */
+        AddTaskRequest: {
+            /** Part */
+            part?: string | null;
+            /**
+             * Take
+             * @default false
+             */
+            take: boolean;
+            /** Title */
+            title: string;
         };
         /** BoardCreated */
         BoardCreated: {
@@ -382,6 +897,21 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** ClaimResult */
+        ClaimResult: {
+            /** Overlaps */
+            overlaps: components["schemas"]["ZoneOverlap"][];
+            zone: components["schemas"]["Zone"];
+        };
+        /** ClaimZoneRequest */
+        ClaimZoneRequest: {
+            /** Name */
+            name?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Paths */
+            paths: string[];
+        };
         /** CreateBoardRequest */
         CreateBoardRequest: {
             /** Name */
@@ -393,11 +923,121 @@ export interface components {
             expires_in_hours?: number | null;
             /** Label */
             label?: string | null;
+            /** Max Uses */
+            max_uses?: number | null;
+            /**
+             * Open
+             * @default false
+             */
+            open: boolean;
             /**
              * Scope
              * @enum {string}
              */
             scope: "join" | "read";
+        };
+        /** Document */
+        Document: {
+            /** Body */
+            body: string;
+            /** Name */
+            name: string;
+            /** Pinned */
+            pinned: boolean;
+            /** Size */
+            size: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string;
+            /** Version */
+            version: number;
+        };
+        /** DocumentInfo */
+        DocumentInfo: {
+            /** Name */
+            name: string;
+            /** Pinned */
+            pinned: boolean;
+            /** Size */
+            size: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string;
+            /** Version */
+            version: number;
+        };
+        /** DocumentsResponse */
+        DocumentsResponse: {
+            /** Documents */
+            documents: components["schemas"]["DocumentInfo"][];
+        };
+        /** FileInfo */
+        FileInfo: {
+            /** Available */
+            available: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Encryption */
+            encryption: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** From */
+            from: string;
+            /** Name */
+            name: string;
+            /** Number */
+            number: number;
+            /** Seq */
+            seq: number;
+            /** Sha256 */
+            sha256: string;
+            /** Size */
+            size: number;
+            /** To */
+            to: string[];
+        };
+        /**
+         * FileRef
+         * @description A file as a message shows it: enough to name it and to ask for it.
+         */
+        FileRef: {
+            /** Available */
+            available: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Name */
+            name: string;
+            /** Number */
+            number: number;
+            /** Size */
+            size: number;
+        };
+        /** FileSent */
+        FileSent: {
+            file: components["schemas"]["FileInfo"];
+            message: components["schemas"]["Message"];
+        };
+        /** FilesResponse */
+        FilesResponse: {
+            /** Files */
+            files: components["schemas"]["FileInfo"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -413,6 +1053,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["FileRef"][];
             /** From */
             from: string;
             /**
@@ -431,8 +1076,12 @@ export interface components {
              * @enum {string}
              */
             reason: "mention" | "human" | "all" | "reply";
+            /** Recipients */
+            recipients: string[];
             /** Reply To */
             reply_to: number | null;
+            /** Seen By */
+            seen_by: string[];
             /** Seq */
             seq: number;
         };
@@ -453,6 +1102,11 @@ export interface components {
             expires_at: string | null;
             /** Label */
             label: string | null;
+            /**
+             * Requires Approval
+             * @default false
+             */
+            requires_approval: boolean;
         };
         /** JoinBoardRequest */
         JoinBoardRequest: {
@@ -462,6 +1116,8 @@ export interface components {
             members: components["schemas"]["JoinMember"][];
             /** Owner */
             owner: string;
+            /** Wanted Owner */
+            wanted_owner?: string | null;
         };
         /** JoinMember */
         JoinMember: {
@@ -476,8 +1132,16 @@ export interface components {
         /** JoinResult */
         JoinResult: {
             board: components["schemas"]["BoardRef"];
+            /** Board Owner */
+            board_owner?: string | null;
             /** Members */
             members: components["schemas"]["JoinedMember"][];
+            /**
+             * State
+             * @default active
+             * @enum {string}
+             */
+            state: "pending" | "active";
         };
         /** JoinedMember */
         JoinedMember: {
@@ -496,6 +1160,8 @@ export interface components {
         /** Me */
         Me: {
             board: components["schemas"]["BoardRef"];
+            /** Board Owner */
+            board_owner?: string | null;
             member: components["schemas"]["MemberSelf"];
         };
         /** MemberOut */
@@ -503,14 +1169,35 @@ export interface components {
             /** Handle */
             handle: string;
             /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+            /**
              * Kind
              * @enum {string}
              */
             kind: "human" | "agent";
+            /** Last Active At */
+            last_active_at: string | null;
             /** Last Seen At */
             last_seen_at: string | null;
             /** Online */
             online: boolean;
+            /** Read Up To */
+            read_up_to: number;
+            /**
+             * Role
+             * @default member
+             * @enum {string}
+             */
+            role: "owner" | "member";
+            /**
+             * State
+             * @default active
+             * @enum {string}
+             */
+            state: "pending" | "active";
             /** Status Text */
             status_text: string | null;
         };
@@ -527,6 +1214,18 @@ export interface components {
             kind: "human" | "agent";
             /** Owner */
             owner: string;
+            /**
+             * Role
+             * @default member
+             * @enum {string}
+             */
+            role: "owner" | "member";
+            /**
+             * State
+             * @default active
+             * @enum {string}
+             */
+            state: "pending" | "active";
             /** Status Text */
             status_text: string | null;
         };
@@ -544,6 +1243,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["FileRef"][];
             /** From */
             from: string;
             /**
@@ -557,8 +1261,12 @@ export interface components {
             mention_humans: boolean;
             /** Mentions */
             mentions: string[];
+            /** Recipients */
+            recipients: string[];
             /** Reply To */
             reply_to: number | null;
+            /** Seen By */
+            seen_by: string[];
             /** Seq */
             seq: number;
         };
@@ -568,6 +1276,14 @@ export interface components {
             messages: components["schemas"]["Message"][];
             /** Next After */
             next_after: number;
+        };
+        /**
+         * OwnerRequest
+         * @description Hand the board to another person on it.
+         */
+        OwnerRequest: {
+            /** Handle */
+            handle: string;
         };
         /** PostMessageRequest */
         PostMessageRequest: {
@@ -588,10 +1304,68 @@ export interface components {
             /** Unknown Mentions */
             unknown_mentions: string[];
         };
+        /** SecurityEvent */
+        SecurityEvent: {
+            /** Actor */
+            actor: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /** Kind */
+            kind: string;
+            /** Subject */
+            subject: string | null;
+        };
+        /** SecurityEventsResponse */
+        SecurityEventsResponse: {
+            /** Events */
+            events: components["schemas"]["SecurityEvent"][];
+        };
         /** SetStatusRequest */
         SetStatusRequest: {
             /** Text */
             text: string | null;
+        };
+        /** Task */
+        Task: {
+            /** Agents */
+            agents: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            /** Done At */
+            done_at: string | null;
+            /** Number */
+            number: number;
+            /** Part */
+            part: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "todo" | "doing" | "done";
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** TasksResponse */
+        TasksResponse: {
+            /** Tasks */
+            tasks: components["schemas"]["Task"][];
         };
         /** TokenCreated */
         TokenCreated: {
@@ -599,6 +1373,13 @@ export interface components {
             expires_at: string | null;
             /** Id */
             id: string;
+            /** Max Uses */
+            max_uses?: number | null;
+            /**
+             * Requires Approval
+             * @default false
+             */
+            requires_approval: boolean;
             /**
              * Scope
              * @enum {string}
@@ -608,6 +1389,45 @@ export interface components {
             token: string;
             /** Url */
             url: string;
+        };
+        /**
+         * TokenOut
+         * @description An invite or feed link, without its secret.
+         */
+        TokenOut: {
+            /** Active */
+            active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Expires At */
+            expires_at: string | null;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string | null;
+            /** Max Uses */
+            max_uses: number | null;
+            /** Requires Approval */
+            requires_approval: boolean;
+            /** Revoked At */
+            revoked_at: string | null;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "join" | "read";
+            /** Uses */
+            uses: number;
+        };
+        /** TokensResponse */
+        TokensResponse: {
+            /** Tokens */
+            tokens: components["schemas"]["TokenOut"][];
         };
         /** ValidationError */
         ValidationError: {
@@ -621,6 +1441,57 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** WriteDocumentRequest */
+        WriteDocumentRequest: {
+            /** Base Version */
+            base_version?: number | null;
+            /** Body */
+            body: string;
+            /** Pinned */
+            pinned?: boolean | null;
+        };
+        /** Zone */
+        Zone: {
+            /**
+             * Claimed At
+             * Format: date-time
+             */
+            claimed_at: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Note */
+            note: string | null;
+            /** Owner */
+            owner: string;
+            /** Paths */
+            paths: string[];
+            /** Stale */
+            stale: boolean;
+        };
+        /** ZoneCheck */
+        ZoneCheck: {
+            /** Conflicts */
+            conflicts: components["schemas"]["ZoneConflict"][];
+        };
+        /** ZoneConflict */
+        ZoneConflict: {
+            /** Path */
+            path: string;
+            zone: components["schemas"]["Zone"];
+        };
+        /** ZoneOverlap */
+        ZoneOverlap: {
+            /** Paths */
+            paths: string[];
+            zone: components["schemas"]["Zone"];
+        };
+        /** ZonesResponse */
+        ZonesResponse: {
+            /** Zones */
+            zones: components["schemas"]["Zone"][];
         };
     };
     responses: never;
@@ -674,6 +1545,72 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["JoinedMember"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_v1_audit_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityEventsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hand_over_v1_board_owner_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -752,6 +1689,140 @@ export interface operations {
             };
         };
     };
+    documents_v1_docs_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_v1_docs__name__get: {
+        parameters: {
+            query?: {
+                version?: number | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_document_v1_docs__name__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WriteDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_document_v1_docs__name__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     feed_board_v1_feed_board_get: {
         parameters: {
             query: {
@@ -770,6 +1841,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BoardRef"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feed_documents_v1_feed_docs_get: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feed_document_v1_feed_docs__name__get: {
+        parameters: {
+            query: {
+                token: string;
+                version?: number | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
                 };
             };
             /** @description Validation Error */
@@ -835,6 +1971,207 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessagesPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feed_tasks_v1_feed_tasks_get: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    files_v1_files_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_v1_files_post: {
+        parameters: {
+            query: {
+                name: string;
+                to: string[];
+                reply_to?: number | null;
+                note?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileSent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    info_v1_files__number__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_v1_files__number__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    content_v1_files__number__content_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
                 };
             };
             /** @description Validation Error */
@@ -1018,6 +2355,35 @@ export interface operations {
             };
         };
     };
+    leave_v1_me_leave_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     set_status_v1_me_status_put: {
         parameters: {
             query?: never;
@@ -1053,7 +2419,9 @@ export interface operations {
     };
     members_v1_members_get: {
         parameters: {
-            query?: never;
+            query?: {
+                pending?: boolean;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -1070,6 +2438,99 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MembersResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_v1_members__handle__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_v1_members__person__accept_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                person: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decline_v1_members__person__decline_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                person: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -1181,6 +2642,204 @@ export interface operations {
             };
         };
     };
+    tasks_v1_tasks_get: {
+        parameters: {
+            query?: {
+                state?: ("todo" | "doing" | "done") | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TasksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_v1_tasks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    done_v1_tasks__number__done_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    leave_v1_tasks__number__leave_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    take_v1_tasks__number__take_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tokens_v1_tokens_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokensResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_token_v1_tokens_post: {
         parameters: {
             query?: never;
@@ -1204,6 +2863,167 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TokenCreated"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_token_v1_tokens__token_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    zones_v1_zones_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZonesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_v1_zones_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimZoneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_v1_zones_check_get: {
+        parameters: {
+            query: {
+                path: string[];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZoneCheck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_v1_zones__zone_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                zone_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -4,22 +4,26 @@ import { DEFAULT_SERVER, parseHandle } from "@agentbridge/protocol";
 import { codexHookStatus, installHooks, userHooksActive } from "../adapters/claude-code/install.ts";
 import { HOOK_EVENTS } from "../adapters/claude-code/settings.ts";
 import { detectAgent, toolFromName } from "../agents.ts";
-import { ApiClient, ApiError } from "../client.ts";
+import { ApiClient, ApiError, normalizeServer } from "../client.ts";
 import type { Command, CommandContext } from "../command.ts";
 import {
   type AgentIdentity,
   type BoardCredentials,
+  envForFolder,
   findRepoConfig,
+  forgetBoard,
   type Identity,
   readCredentials,
   registerAgent,
+  rememberFolder,
   saveBoardCredentials,
   writeRepoConfig,
 } from "../config.ts";
 import { inviteMessage } from "../format.ts";
+import { noteSessionFolder } from "../hooks/session.ts";
 import { CliError, EXIT, UsageError } from "../io.ts";
 import { describeInstall } from "./claude-code.ts";
-import { stringValue } from "./shared.ts";
+import { requirePerson, stringValue } from "./shared.ts";
 
 const DEFAULT_AGENT = "claude";
 
@@ -95,7 +99,10 @@ async function valueOrAsk(
   } else if (defaultValue !== undefined && !options.required) {
     return defaultValue;
   }
-  throw new UsageError(`Missing --${flag}.`, `Pass --${flag} <value> (there is nobody to ask).`);
+  throw new UsageError(
+    `Missing --${flag}: there is no terminal to ask in.`,
+    `Pass --${flag} <value>.`,
+  );
 }
 
 /** The agent name from --agent, a terminal question, or the tool running the command. */
@@ -173,6 +180,52 @@ function claudeCodeText(state: ClaudeCodeState, installText: string): string {
   return "";
 }
 
+/** Someone else is on the board with the keys in this config folder. */
+function anotherPerson(board: string, current: string, wanted: string): UsageError {
+  return new UsageError(
+    `This machine is already on board "${board}" as ${current}, so it cannot join as ${wanted} with the same keys.`,
+    "Each person on one machine needs a config folder of their own, for example\n" +
+      `  AGENTBRIDGE_CONFIG_DIR=~/.config/agentbridge-${wanted} agentbridge init --join <invite link> --owner ${wanted}\n` +
+      "The folder is remembered for this project, so commands and hooks here use it without the variable.",
+  );
+}
+
+/**
+ * When git names someone else than the person this machine is on the board as, a note on how a
+ * second person on one machine gets keys of their own. Not an error: one person's git name can
+ * differ from their handle.
+ */
+async function someoneElseNote(
+  io: CommandContext["io"],
+  current: string,
+): Promise<string | undefined> {
+  const fromGit = suggestOwner(await gitUserName(io.cwd, io.env));
+  if (fromGit === undefined || fromGit === current || current.startsWith(`${fromGit}-`)) {
+    return undefined;
+  }
+  return (
+    `git says you are "${fromGit}". If that is someone else than ${current}, give them a config ` +
+    `folder of their own: AGENTBRIDGE_CONFIG_DIR=~/.config/agentbridge-${fromGit} ` +
+    "agentbridge init --join <invite link>"
+  );
+}
+
+/** Whether a stored key still works on the board: its member did not leave, and was not taken
+ * off it. */
+async function keyWorks(
+  server: string,
+  apiKey: string,
+  fetchImpl: CommandContext["io"]["fetch"],
+): Promise<boolean> {
+  try {
+    await new ApiClient(server, apiKey, fetchImpl).me();
+    return true;
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "removed") return false;
+    throw error;
+  }
+}
+
 /**
  * The person is already on this board from this machine (another repository, or another agent
  * in this one): keep their account and add the agent if it is new, instead of joining again.
@@ -184,11 +237,21 @@ async function addToBoard(
   dir: string,
 ): Promise<number> {
   const { io } = context;
+  const owner = stringValue(context.values, "owner");
+  if (owner !== undefined && owner !== credentials.owner)
+    throw anotherPerson(board.name, credentials.owner, owner);
+  const note = owner === undefined ? await someoneElseNote(io, credentials.owner) : undefined;
   const name = await askAgentName(context, credentials.owner);
   let agent: AgentIdentity | undefined;
   let added = false;
   if (name !== undefined) {
     agent = credentials.agents[name];
+    // Taken off the board by its person: its key stays here, dead, so that its hooks do not
+    // quietly add it back. Only the person brings it back, with this command in their terminal.
+    if (agent && !(await keyWorks(credentials.server, agent.api_key, io.fetch))) {
+      requirePerson(io, `agentbridge init --agent ${name}`);
+      agent = undefined;
+    }
     if (!agent) {
       agent = await registerAgent(
         io.env,
@@ -206,6 +269,8 @@ async function addToBoard(
     board_id: board.id,
     board_name: board.name,
   });
+  await rememberFolder(io.env, dir);
+  await noteSessionFolder(io.env, dir);
   const hooks = await claudeCodeHooks(context, agent !== undefined, dir);
 
   if (context.json) {
@@ -223,6 +288,7 @@ async function addToBoard(
           .sort(),
         already_member: true,
         agent_added: added,
+        note: note ?? null,
         renamed: false,
         config: path,
         invite_url: null,
@@ -235,6 +301,7 @@ async function addToBoard(
   }
 
   io.out(`You are already on board "${board.name}" as ${credentials.human.handle}.\n`);
+  if (note) io.out(`(${note})\n`);
   if (agent && added) io.out(`Added your agent ${agent.handle}.\n`);
   else if (agent) io.out(`Your agent ${agent.handle} is already set up.\n`);
   io.out(`Wrote ${path} (no secrets; commit it so teammates use the same board).\n`);
@@ -267,11 +334,14 @@ export const init: Command = {
     "claude-code": { type: "boolean" },
     "no-claude-code": { type: "boolean" },
   },
-  async run(context) {
+  async run(given) {
+    // A project joined with a config folder of its own keeps using it, also without the variable.
+    const existing = await findRepoConfig(given.io.cwd);
+    const env = existing ? await envForFolder(given.io.env, existing.dir) : given.io.env;
+    const context = env === given.io.env ? given : { ...given, io: { ...given.io, env } };
     const { io, values } = context;
 
     const force = values.force === true;
-    const existing = await findRepoConfig(io.cwd);
     const joinInput = stringValue(values, "join");
     const join = joinInput === undefined ? undefined : parseJoin(joinInput);
     const stored = (await readCredentials(io.env)).boards;
@@ -296,15 +366,15 @@ export const init: Command = {
       return addToBoard(context, board, credentials, existing.dir);
     }
 
-    const server = (
+    const server =
       join?.server ??
-      stringValue(values, "server") ??
-      (io.env.AGENTBRIDGE_SERVER
-        ? io.env.AGENTBRIDGE_SERVER
-        : await valueOrAsk(context, "server", "Server address", DEFAULT_SERVER, {
-            required: false,
-          }))
-    ).replace(/\/+$/, "");
+      (io.env.AGENTBRIDGE_SERVER && stringValue(values, "server") === undefined
+        ? normalizeServer(io.env.AGENTBRIDGE_SERVER, "AGENTBRIDGE_SERVER")
+        : normalizeServer(
+            await valueOrAsk(context, "server", "Server address", DEFAULT_SERVER, {
+              required: false,
+            }),
+          ));
 
     // An invite to a board this machine is already on: add the agent instead of joining again
     // (which would register the person a second time as "alice-2").
@@ -321,7 +391,11 @@ export const init: Command = {
       }
       const credentials = stored[board.id];
       if (credentials && !force) {
-        return addToBoard(context, board, credentials, existing?.dir ?? io.cwd);
+        if (await keyWorks(credentials.server, credentials.human.api_key, io.fetch)) {
+          return addToBoard(context, board, credentials, existing?.dir ?? io.cwd);
+        }
+        // Taken off the board, or left it: the old keys are dead, so join again with the invite.
+        await forgetBoard(io.env, board.id);
       }
     } else if (existing && !force) {
       throw alreadyConnected(existing.config.board_name, existing.path);
@@ -378,15 +452,22 @@ export const init: Command = {
           : [{ handle: `${ownerUsed}/${agentName}`, kind: "agent" as const }]),
       ];
       try {
-        joined = await client.join({ join_token: joinToken, owner: ownerUsed, members });
+        joined = await client.join({
+          join_token: joinToken,
+          owner: ownerUsed,
+          members,
+          // The board's join event then explains the number ("the name alice was taken").
+          ...(ownerUsed === owner ? {} : { wanted_owner: owner }),
+        });
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) throw invalidInvite();
         if (error instanceof ApiError && error.status === 409) {
           if (!ownerGiven && attempt < 9) continue;
-          throw new CliError(
-            `Someone named "${ownerUsed}" (or that agent) is already on this board.`,
-            { hint: "Pick another --owner or --agent name." },
-          );
+          throw new CliError(`The name "${ownerUsed}" (or that agent) is taken on this board.`, {
+            hint:
+              "Pick another --owner or --agent name. The name of someone who left the board " +
+              "stays taken.",
+          });
         }
         throw error;
       }
@@ -421,9 +502,13 @@ export const init: Command = {
       board_id: boardId,
       board_name: boardName,
     });
+    await rememberFolder(io.env, existing?.dir ?? io.cwd);
+    // Joined by an agent that was started in another folder: its hooks move to this board.
+    await noteSessionFolder(io.env, existing?.dir ?? io.cwd);
 
+    const waiting = joined.state === "pending";
     // Someone who joined gets a feed link of their own (the creator got one with the board).
-    if (feedUrl === undefined) {
+    if (feedUrl === undefined && !waiting) {
       feedUrl = await new ApiClient(server, human.api_key, io.fetch)
         .createToken({ scope: "read", label: `feed for ${human.handle}` })
         .then((token) => token.url)
@@ -443,12 +528,15 @@ export const init: Command = {
           agents: agent ? [agent.handle] : [],
           already_member: false,
           agent_added: agent !== undefined,
+          note: null,
           renamed,
           config: path,
           invite_url: inviteUrl ?? null,
           invite_message: invitation ?? null,
           feed_url: feedUrl ?? null,
           claude_code: hooks.state,
+          state: joined.state ?? "active",
+          board_owner: joined.board_owner ?? null,
         })}\n`,
       );
       return EXIT.ok;
@@ -465,6 +553,18 @@ export const init: Command = {
       io.out("\nSend this to your teammates; they paste it into their coding agent:\n");
       io.out(`  ${invitation}\n`);
       io.out(`(Without an agent: agentbridge init --join ${inviteUrl})\n`);
+      io.out(
+        "Each of them waits until you let them in: agentbridge accept <name>. You own this board.\n",
+      );
+    }
+    if (waiting) {
+      const who = joined.board_owner ?? "The board's owner";
+      io.out(
+        `\nYou asked to join. ${who} decides and has been told; until they let you in, the board\n` +
+          `tells you and your agent nothing. They run: agentbridge accept ${human.handle}\n`,
+      );
+      io.out(claudeCodeText(hooks.state, hooks.text));
+      return EXIT.ok;
     }
     if (feedUrl) {
       io.out(`\nWatch the board in your browser (read-only):\n  ${feedUrl}\n`);

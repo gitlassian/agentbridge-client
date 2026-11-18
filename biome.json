@@ -10,6 +10,7 @@
       "**",
       "!**/pnpm-lock.yaml",
       "!**/*.md",
+      "!design",
       "!packages/protocol/src/api.ts",
       "!packages/protocol/openapi.json"
     ]

@@ -2,8 +2,12 @@ import { parseArgs } from "node:util";
 import pkg from "../package.json" with { type: "json" };
 import { ApiError } from "./client.ts";
 import type { Command, CommandContext, Values } from "./command.ts";
+import { claim } from "./commands/claim.ts";
 import { claudeCode } from "./commands/claude-code.ts";
+import { config } from "./commands/config.ts";
+import { doc } from "./commands/doc.ts";
 import { feed } from "./commands/feed.ts";
+import { file } from "./commands/file.ts";
 import { hook } from "./commands/hook.ts";
 import { inbox } from "./commands/inbox.ts";
 import { init } from "./commands/init.ts";
@@ -12,11 +16,17 @@ import { log } from "./commands/log.ts";
 import { mcp } from "./commands/mcp.ts";
 import { me } from "./commands/me.ts";
 import { members } from "./commands/members.ts";
+import { accept, audit, decline, leave, links, owner, remove, revoke } from "./commands/people.ts";
 import { post } from "./commands/post.ts";
+import { read } from "./commands/read.ts";
+import { release } from "./commands/release.ts";
 import { setup } from "./commands/setup.ts";
 import { status } from "./commands/status.ts";
+import { task } from "./commands/task.ts";
 import { wait } from "./commands/wait.ts";
+import { zones } from "./commands/zones.ts";
 import { CliError, EXIT, type Io, UsageError } from "./io.ts";
+import { printable } from "./printable.ts";
 
 export type { Io } from "./io.ts";
 
@@ -28,12 +38,28 @@ const COMMANDS: Command[] = [
   post,
   inbox,
   wait,
+  read,
   log,
+  doc,
+  claim,
+  release,
+  zones,
+  task,
+  file,
   members,
   status,
   me,
   invite,
+  links,
+  revoke,
+  accept,
+  decline,
+  remove,
+  leave,
+  owner,
+  audit,
   feed,
+  config,
   claudeCode,
   mcp,
   hook,
@@ -82,6 +108,20 @@ function describeError(error: unknown, io: Io): number {
     return error.exitCode;
   }
   if (error instanceof ApiError) {
+    if (error.code === "pending") {
+      io.err(`Error: ${error.message}.\n`);
+      io.err(
+        "You can use the board once they let you in; they run `agentbridge accept` for you.\n",
+      );
+      return EXIT.error;
+    }
+    if (error.code === "removed") {
+      io.err("Error: you are no longer on this board: you left it, or its owner took you off.\n");
+      io.err(
+        "To come back, ask the owner for an invite and run `agentbridge init --join <invite link>`.\n",
+      );
+      return EXIT.error;
+    }
     if (error.status === 401) {
       io.err("Error: the server did not accept your key.\n");
       io.err("It may have been revoked. Reconnect with `agentbridge init --force`.\n");
@@ -95,8 +135,32 @@ function describeError(error: unknown, io: Io): number {
   return EXIT.error;
 }
 
+/**
+ * The same `io` for output that a person reads in a terminal. Everything a command prints goes
+ * through here once, so that no command has to remember which of its text came from the board.
+ *
+ * Results are cleaned only when they go to a terminal (`io.terminal`) and are text: JSON for a
+ * script, the output of a command that speaks a protocol, and anything an agent or a script reads
+ * through a pipe stay exact, so a document read and written back keeps every character. Errors
+ * are cleaned, except from a command that speaks a protocol: the wake hook hands an agent its
+ * messages on standard error.
+ */
+function forReading(io: Io, options: { json: boolean; protocol: boolean }): Io {
+  const exactOut = options.json || options.protocol || io.terminal !== true;
+  return {
+    ...io,
+    out: exactOut ? io.out : (text) => io.out(printable(text)),
+    err: options.protocol ? io.err : (text) => io.err(printable(text)),
+  };
+}
+
+/** Commands that talk to a program, not to a person: their output is a protocol. */
+const SPEAKS_A_PROTOCOL = new Set(["mcp", "hook"]);
+
 /** Runs the command line tool. Returns the process exit code. */
-export async function run(argv: string[], io: Io): Promise<number> {
+export async function run(argv: string[], terminal: Io): Promise<number> {
+  // Until the command and its options are known, only errors can carry text from elsewhere.
+  let io = forReading(terminal, { json: true, protocol: false });
   try {
     const [first, ...rest] = argv;
 
@@ -127,7 +191,12 @@ export async function run(argv: string[], io: Io): Promise<number> {
         strict: true,
       }) as { values: Values; positionals: string[] };
     } catch (error) {
-      throw new UsageError((error as Error).message, `Usage: ${command.usage}`);
+      // Node adds how to pass a text that starts with a dash; the usage below says enough.
+      const message = (error as Error).message.replace(
+        /\. To specify a positional argument.*$/s,
+        ".",
+      );
+      throw new UsageError(message, `Usage: ${command.usage}`);
     }
 
     if (parsed.values.help === true) {
@@ -148,6 +217,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
       throw new UsageError("--agent acts as an agent, so it cannot go with --as human.");
     }
 
+    io = forReading(terminal, {
+      json: parsed.values.json === true,
+      protocol: SPEAKS_A_PROTOCOL.has(command.name),
+    });
     const context: CommandContext = {
       io,
       values: parsed.values,
